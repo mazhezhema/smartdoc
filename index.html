@@ -4,24 +4,23 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SmartDoc - 智能转换器</title>
-    <!-- 使用 jsDelivr 加载样式 -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css">
+    <!-- 样式加载 -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" crossorigin="anonymous">
     <style>
         .task-list-height { max-height: 500px; }
-        .drop-zone { border: 3px dashed #cbd5e1; }
-        .status-badge { transition: all 0.3s; }
+        .drop-zone { border: 3px dashed #e2e8f0; border-radius: 1rem; }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
     <div class="max-w-4xl mx-auto py-12 px-4">
         <div class="flex justify-between items-center mb-10">
             <h1 class="text-3xl font-bold text-indigo-600">SmartDoc</h1>
-            <div id="statusBadge" class="status-badge text-xs font-bold px-3 py-1 rounded-full bg-yellow-100 text-yellow-600">
+            <div id="statusBadge" class="text-xs font-bold px-3 py-1 rounded-full bg-yellow-100 text-yellow-600">
                 正在检查环境...
             </div>
         </div>
 
-        <div id="dropZone" class="bg-white rounded-2xl p-12 text-center mb-8 shadow-sm">
+        <div id="dropZone" class="bg-white p-12 text-center mb-8 shadow-sm">
             <div class="mb-6">
                 <select id="targetFormat" class="mb-4 p-2 border rounded-lg text-sm bg-white">
                     <option value="epub">转换目标: EPUB</option>
@@ -34,46 +33,23 @@
                 </button>
             </div>
             <div class="flex items-center justify-center text-sm text-gray-500">
-                <input type="checkbox" id="autoReplace" checked class="mr-2 h-4 w-4">
+                <input type="checkbox" id="autoReplace" checked class="mr-2">
                 <label for="autoReplace">成功后自动替换原文件</label>
             </div>
         </div>
 
         <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-            <div class="p-4 bg-gray-50 border-b font-bold text-gray-400 text-xs uppercase tracking-widest">任务列表</div>
+            <div class="p-4 bg-gray-50 border-b font-bold text-gray-400 text-xs uppercase tracking-widest text-center">任务列表</div>
             <div id="taskList" class="p-6 task-list-height overflow-y-auto min-h-[200px]">
                 <p class="text-center text-gray-300 italic py-10">暂无任务</p>
             </div>
         </div>
     </div>
 
-    <!-- 修复后的脚本地址，带自动回退逻辑 -->
+    <!-- 核心：使用 crossorigin 属性防止浏览器拦截 -->
+    <script src="https://cdn.jsdelivr.net/npm/pandoc-wasm@0.1.7/dist/index.js" crossorigin="anonymous"></script>
+
     <script>
-        const scriptUrls = [
-            "https://unpkg.com/pandoc-wasm@0.1.7/dist/index.js",
-            "https://cdn.jsdelivr.net/npm/pandoc-wasm@0.1.7/dist/index.js"
-        ];
-        
-        let currentUrlIndex = 0;
-
-        function loadEngineScript() {
-            return new Promise((resolve, reject) => {
-                const script = document.createElement('script');
-                script.src = scriptUrls[currentUrlIndex];
-                script.onload = resolve;
-                script.onerror = () => {
-                    currentUrlIndex++;
-                    if (currentUrlIndex < scriptUrls.length) {
-                        console.warn("主地址失败，尝试备用地址...");
-                        loadEngineScript().then(resolve).catch(reject);
-                    } else {
-                        reject(new Error("所有脚本源均加载失败，请检查网络。"));
-                    }
-                };
-                document.head.appendChild(script);
-            });
-        }
-
         let pandoc = null;
         let isProcessing = false;
         let queue = [];
@@ -84,19 +60,18 @@
 
         async function init() {
             try {
-                // 第一步：加载脚本
-                await loadEngineScript();
-                
-                // 第二步：初始化引擎
-                statusBadge.innerText = "⏳ 正在载入核心组件 (约30MB)...";
+                if (typeof window.Pandoc === 'undefined') {
+                    throw new Error("脚本加载被拦截，请尝试使用无痕模式或关闭所有插件。");
+                }
+                statusBadge.innerText = "⏳ 正在载入组件 (30MB+)...";
+                // 初始化
                 pandoc = await window.Pandoc.load();
-                
                 statusBadge.innerText = "⚡ 引擎就绪";
-                statusBadge.className = "status-badge text-xs font-bold px-3 py-1 rounded-full bg-green-100 text-green-600";
+                statusBadge.className = "text-xs font-bold px-3 py-1 rounded-full bg-green-100 text-green-600";
             } catch (e) {
                 statusBadge.innerText = "❌ 加载失败";
-                statusBadge.className = "status-badge text-xs font-bold px-3 py-1 rounded-full bg-red-100 text-red-600";
-                alert(e.message);
+                statusBadge.className = "text-xs font-bold px-3 py-1 rounded-full bg-red-100 text-red-600";
+                console.error(e);
             }
         }
 
@@ -127,7 +102,7 @@
             if (isProcessing || queue.length === 0) return;
             isProcessing = true;
             while (queue.length > 0) {
-                const task = queue[0];
+                const task = queue.shift();
                 const row = document.getElementById(task.id);
                 row.querySelector('.status').innerText = "转换中...";
 
@@ -135,18 +110,17 @@
                     const newName = await convertAndSave(task);
                     row.className = "p-3 mb-2 rounded bg-green-50 text-xs flex justify-between border border-green-100";
                     row.querySelector('.status').innerText = "✅ 完成";
-                    row.querySelector('.name').innerText = newName;
                 } catch (err) {
                     row.className = "p-3 mb-2 rounded bg-red-50 text-xs flex justify-between border border-red-100";
                     row.querySelector('.status').innerText = "❌ 失败";
+                    console.error(err);
                 }
-                queue.shift();
             }
             isProcessing = false;
         }
 
         document.getElementById('pickDir').addEventListener('click', async () => {
-            if (!pandoc) return alert("引擎未就绪，请等待右上角变为“引擎就绪”");
+            if (!pandoc) return alert("请等待引擎加载就绪");
             try {
                 dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
                 taskList.innerHTML = "";
@@ -158,14 +132,12 @@
                         const div = document.createElement('div');
                         div.id = id;
                         div.className = "p-3 mb-2 rounded bg-gray-50 text-xs flex justify-between border border-gray-100";
-                        div.innerHTML = `<span class="name">${file.name}</span><span class="status font-bold text-indigo-600">等待中</span>`;
+                        div.innerHTML = `<span>${file.name}</span><span class="status font-bold text-indigo-600">等待中</span>`;
                         taskList.appendChild(div);
                     }
                 }
                 process();
-            } catch (e) {
-                console.warn("用户取消授权");
-            }
+            } catch (e) {}
         });
 
         window.onload = init;
