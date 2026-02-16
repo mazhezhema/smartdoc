@@ -3,26 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SmartDoc - 智能转换器</title>
-    <!-- 样式加载 -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" crossorigin="anonymous">
+    <title>SmartDoc - 智能文档转换器</title>
+    <!-- 样式使用更稳定的 unpkg 地址 -->
+    <link rel="stylesheet" href="https://unpkg.com/tailwindcss@2.2.19/dist/tailwind.min.css">
     <style>
         .task-list-height { max-height: 500px; }
-        .drop-zone { border: 3px dashed #e2e8f0; border-radius: 1rem; }
+        .drop-zone { border: 3px dashed #cbd5e1; border-radius: 1rem; transition: all 0.3s; }
+        .drop-zone:hover { border-color: #4f46e5; background-color: #f5f3ff; }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
     <div class="max-w-4xl mx-auto py-12 px-4">
         <div class="flex justify-between items-center mb-10">
-            <h1 class="text-3xl font-bold text-indigo-600">SmartDoc</h1>
+            <h1 class="text-3xl font-bold text-indigo-600 flex items-center">
+                <span class="mr-2">🔄</span> SmartDoc
+            </h1>
             <div id="statusBadge" class="text-xs font-bold px-3 py-1 rounded-full bg-yellow-100 text-yellow-600">
-                正在检查环境...
+                等待引擎加载...
             </div>
         </div>
 
         <div id="dropZone" class="bg-white p-12 text-center mb-8 shadow-sm">
             <div class="mb-6">
-                <select id="targetFormat" class="mb-4 p-2 border rounded-lg text-sm bg-white">
+                <select id="targetFormat" class="mb-4 p-2 border rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-indigo-500">
                     <option value="epub">转换目标: EPUB</option>
                     <option value="txt">转换目标: TXT</option>
                     <option value="docx">转换目标: Word (.docx)</option>
@@ -33,21 +36,21 @@
                 </button>
             </div>
             <div class="flex items-center justify-center text-sm text-gray-500">
-                <input type="checkbox" id="autoReplace" checked class="mr-2">
-                <label for="autoReplace">成功后自动替换原文件</label>
+                <input type="checkbox" id="autoReplace" checked class="mr-2 h-4 w-4">
+                <label for="autoReplace" class="cursor-pointer">成功后自动替换原文件</label>
             </div>
         </div>
 
         <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div class="p-4 bg-gray-50 border-b font-bold text-gray-400 text-xs uppercase tracking-widest text-center">任务列表</div>
-            <div id="taskList" class="p-6 task-list-height overflow-y-auto min-h-[200px]">
-                <p class="text-center text-gray-300 italic py-10">暂无任务</p>
+            <div id="taskList" class="p-6 task-list-height overflow-y-auto min-h-[250px]">
+                <p class="text-center text-gray-300 italic py-10">暂无任务，请点击上方按钮</p>
             </div>
         </div>
     </div>
 
-    <!-- 核心：使用 crossorigin 属性防止浏览器拦截 -->
-    <script src="https://cdn.jsdelivr.net/npm/pandoc-wasm@0.1.7/dist/index.js" crossorigin="anonymous"></script>
+    <!-- 核心：使用官方验证的 unpkg 路径 -->
+    <script src="https://unpkg.com/pandoc-wasm@0.1.7/dist/index.js"></script>
 
     <script>
         let pandoc = null;
@@ -58,20 +61,25 @@
         const statusBadge = document.getElementById('statusBadge');
         const taskList = document.getElementById('taskList');
 
+        // 初始化函数
         async function init() {
             try {
                 if (typeof window.Pandoc === 'undefined') {
-                    throw new Error("脚本加载被拦截，请尝试使用无痕模式或关闭所有插件。");
+                    throw new Error("脚本未就绪");
                 }
-                statusBadge.innerText = "⏳ 正在载入组件 (30MB+)...";
-                // 初始化
+                statusBadge.innerText = "⏳ 正在载入转换核心 (30MB+)...";
+                
+                // 加载 Pandoc Wasm 引擎
                 pandoc = await window.Pandoc.load();
+                
                 statusBadge.innerText = "⚡ 引擎就绪";
                 statusBadge.className = "text-xs font-bold px-3 py-1 rounded-full bg-green-100 text-green-600";
             } catch (e) {
                 statusBadge.innerText = "❌ 加载失败";
                 statusBadge.className = "text-xs font-bold px-3 py-1 rounded-full bg-red-100 text-red-600";
-                console.error(e);
+                console.error("初始化详情:", e);
+                // 自动重试逻辑
+                setTimeout(init, 3000);
             }
         }
 
@@ -80,6 +88,7 @@
             const buffer = await task.file.arrayBuffer();
             const fromExt = task.file.name.split('.').pop().toLowerCase();
             
+            // 执行转换
             const result = await pandoc.run({
                 text: new Uint8Array(buffer),
                 from: fromExt === 'txt' ? 'markdown' : fromExt,
@@ -87,11 +96,14 @@
             });
 
             const newName = task.file.name.substring(0, task.file.name.lastIndexOf('.')) + '.' + format;
+            
+            // 写入文件
             const newFile = await dirHandle.getFileHandle(newName, { create: true });
             const sw = await newFile.createWritable();
             await sw.write(new Blob([result]));
             await sw.close();
 
+            // 自动删除原件
             if (document.getElementById('autoReplace').checked) {
                 await dirHandle.removeEntry(task.file.name);
             }
@@ -107,20 +119,20 @@
                 row.querySelector('.status').innerText = "转换中...";
 
                 try {
-                    const newName = await convertAndSave(task);
+                    await convertAndSave(task);
                     row.className = "p-3 mb-2 rounded bg-green-50 text-xs flex justify-between border border-green-100";
                     row.querySelector('.status').innerText = "✅ 完成";
                 } catch (err) {
                     row.className = "p-3 mb-2 rounded bg-red-50 text-xs flex justify-between border border-red-100";
                     row.querySelector('.status').innerText = "❌ 失败";
-                    console.error(err);
+                    console.error("转换出错:", err);
                 }
             }
             isProcessing = false;
         }
 
         document.getElementById('pickDir').addEventListener('click', async () => {
-            if (!pandoc) return alert("请等待引擎加载就绪");
+            if (!pandoc) return alert("转换引擎仍在加载中，请稍候...（30MB组件下载需要时间）");
             try {
                 dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
                 taskList.innerHTML = "";
@@ -137,9 +149,12 @@
                     }
                 }
                 process();
-            } catch (e) {}
+            } catch (e) {
+                console.warn("授权取消");
+            }
         });
 
+        // 页面加载后立即初始化
         window.onload = init;
     </script>
 </body>
