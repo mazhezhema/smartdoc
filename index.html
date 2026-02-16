@@ -3,21 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SmartDoc - 智能文档转换</title>
-    <!-- 更换为 jsdelivr 镜像，国内访问更稳定 -->
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <title>SmartDoc - 智能转换</title>
+    <!-- 使用国内镜像加载 CSS -->
+    <link href="https://registry.npmmirror.com/tailwindcss/2.2.19/files/dist/tailwind.min.css" rel="stylesheet">
     <style>
         .task-list-height { max-height: 500px; }
-        #dropZone { border-width: 4px; border-style: dashed; }
+        #dropZone { border: 3px dashed #e5e7eb; transition: all 0.3s; }
+        #dropZone:hover { border-color: #4f46e5; background-color: #f5f3ff; }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
     <div class="max-w-4xl mx-auto py-10 px-4">
         <div class="flex justify-between items-center mb-8">
-            <h1 class="text-2xl font-bold text-indigo-700">🔄 SmartDoc</h1>
+            <h1 class="text-2xl font-bold text-indigo-700 flex items-center">
+                <span class="mr-2">🔄</span> SmartDoc
+            </h1>
             <div class="flex items-center gap-4">
-                <span id="engineStatus" class="text-xs bg-gray-200 px-2 py-1 rounded">正在检查环境...</span>
-                <select id="targetFormat" class="rounded-md border p-2 text-sm bg-white border-gray-300 shadow-sm">
+                <span id="engineStatus" class="text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded">正在准备转换引擎...</span>
+                <select id="targetFormat" class="rounded-md border p-2 text-sm bg-white border-gray-300">
                     <option value="epub">转为 EPUB</option>
                     <option value="txt">转为 TXT</option>
                     <option value="docx">转为 Word (.docx)</option>
@@ -25,53 +28,49 @@
             </div>
         </div>
 
-        <div id="dropZone" class="border-gray-200 rounded-xl p-12 text-center bg-white mb-8">
+        <div id="dropZone" class="rounded-xl p-12 text-center bg-white mb-8 shadow-sm">
             <button id="pickDir" class="bg-indigo-600 text-white px-8 py-3 rounded-lg font-semibold shadow-md hover:bg-indigo-700">📁 选择文件夹并开始</button>
-            <p class="text-gray-400 mt-4 text-sm">授权后，系统将自动执行“转换且替换”</p>
-            <div class="mt-4 flex items-center justify-center text-sm text-gray-500">
-                <input type="checkbox" id="autoReplace" checked class="mr-2">
-                <label for="autoReplace">成功后自动删除原文件 (替换模式)</label>
-            </div>
+            <p class="text-gray-400 mt-4 text-sm text-center">授权后，系统将自动扫描并执行“转换且替换”</p>
         </div>
 
-        <div class="bg-white rounded-xl shadow-sm border border-gray-100">
-            <div class="p-4 border-b flex justify-between bg-gray-50">
-                <h2 class="text-sm font-bold text-gray-600">任务队列</h2>
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="p-4 border-b flex justify-between bg-gray-50 items-center">
+                <h2 class="text-sm font-bold text-gray-600 uppercase">任务队列</h2>
                 <span id="stats" class="text-xs text-gray-400">就绪</span>
             </div>
-            <div id="taskList" class="p-4 space-y-3 min-h-[200px]">
+            <div id="taskList" class="p-4 space-y-3 min-h-[200px] task-list-height overflow-y-auto">
                 <p class="text-center text-gray-300 py-10">等待任务中...</p>
             </div>
         </div>
     </div>
 
-    <!-- 更换 Pandoc 引擎源为 jsdelivr -->
-    <script src="https://cdn.jsdelivr.net/npm/pandoc-wasm@0.1.7/dist/index.js"></script>
+    <!-- 使用国内镜像加载引擎 -->
+    <script src="https://registry.npmmirror.com/pandoc-wasm/0.1.7/files/dist/index.js"></script>
+    
     <script type="module">
         let pandocEngine = null, isProcessing = false, taskQueue = [], currentDirHandle = null;
         const engineStatus = document.getElementById('engineStatus'), taskListElem = document.getElementById('taskList'), statsElem = document.getElementById('stats');
 
         async function init() {
-            // 检查跨域隔离环境
-            if (!window.crossOriginIsolated) {
-                console.warn("跨域隔离未开启，引擎可能运行缓慢或失败");
-            }
-
             try {
-                // 确保 Pandoc 已加载
                 if (typeof window.Pandoc === 'undefined') {
-                    throw new Error("Pandoc 脚本未加载，请检查网络或关闭插件");
+                    throw new Error("Pandoc 脚本未加载。请尝试：1. 开启 Clash 全局模式 2. 关闭浏览器广告拦截插件");
                 }
+
+                engineStatus.innerText = "⏳ 正在从云端拉取转换核心 (约30MB)...";
+                // 核心引擎加载
                 pandocEngine = await window.Pandoc.load();
+                
                 engineStatus.innerText = "⚡ 引擎就绪";
                 engineStatus.className = "text-xs bg-green-100 text-green-700 px-2 py-1 rounded";
             } catch (err) {
-                engineStatus.innerText = "❌ 加载失败: " + err.message;
+                engineStatus.innerText = "❌ 失败: " + err.message;
                 engineStatus.className = "text-xs bg-red-100 text-red-700 px-2 py-1 rounded";
-                console.error("初始化错误:", err);
+                console.error(err);
             }
         }
 
+        // 下面这部分转换逻辑与之前一致...
         async function runConversion(file, targetExt) {
             const buffer = await file.arrayBuffer();
             const fromExt = file.name.split('.').pop().toLowerCase();
@@ -89,7 +88,7 @@
             isProcessing = true;
             while (taskQueue.length > 0) {
                 const task = taskQueue[0];
-                updateTaskUI(task, 'processing', '处理中...');
+                updateTaskUI(task, 'processing');
                 try {
                     const targetFormat = document.getElementById('targetFormat').value;
                     const baseName = task.file.name.substring(0, task.file.name.lastIndexOf('.'));
@@ -99,10 +98,8 @@
                     const writable = await newFileHandle.createWritable();
                     await writable.write(convertedBlob);
                     await writable.close();
-                    if (document.getElementById('autoReplace').checked) {
-                        await currentDirHandle.removeEntry(task.file.name);
-                    }
-                    updateTaskUI(task, 'success', `成功替换为 ${newName}`);
+                    await currentDirHandle.removeEntry(task.file.name);
+                    updateTaskUI(task, 'success', `已替换为 ${newName}`);
                 } catch (err) { updateTaskUI(task, 'error', err.message); }
                 taskQueue.shift();
                 statsElem.innerText = `剩余: ${taskQueue.length}`;
@@ -129,7 +126,7 @@
         }
 
         document.getElementById('pickDir').addEventListener('click', async () => {
-            if (!pandocEngine) return alert("请等待引擎加载");
+            if (!pandocEngine) return alert("请等待引擎加载完成");
             try {
                 currentDirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
                 for await (const entry of currentDirHandle.values()) {
