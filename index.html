@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartDoc - 智能文档批量转换</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="max-w-4xl mx-auto py-10 px-4">
+        <div class="flex justify-between items-center mb-8">
+            <h1 class="text-2xl font-bold text-indigo-700">🔄 SmartDoc</h1>
+            <div class="flex items-center gap-4">
+                <span id="engineStatus" class="text-xs bg-gray-200 px-2 py-1 rounded">引擎加载中...</span>
+                <select id="targetFormat" class="rounded-md border p-2 text-sm bg-white">
+                    <option value="epub">转为 EPUB</option>
+                    <option value="txt">转为 TXT</option>
+                    <option value="docx">转为 Word (.docx)</option>
+                </select>
+            </div>
+        </div>
+        <div id="dropZone" class="border-4 border-dashed border-gray-200 rounded-xl p-12 text-center bg-white mb-8">
+            <button id="pickDir" class="bg-indigo-600 text-white px-8 py-3 rounded-lg font-semibold shadow-md">📁 选择文件夹并开始</button>
+            <p class="text-gray-400 mt-4 text-sm">授权后，系统将自动扫描并执行“转换且替换”</p>
+            <div class="mt-4 flex items-center justify-center text-sm text-gray-500">
+                <input type="checkbox" id="autoReplace" checked class="mr-2">
+                <label for="autoReplace">成功后自动删除原文件 (替换模式)</label>
+            </div>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100">
+            <div class="p-4 border-b flex justify-between bg-gray-50">
+                <h2 class="text-sm font-bold text-gray-600">任务队列</h2>
+                <span id="stats" class="text-xs text-gray-400">就绪</span>
+            </div>
+            <div id="taskList" class="p-4 space-y-3 min-h-[200px]">
+                <p class="text-center text-gray-300 py-10">等待任务中...</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/pandoc-wasm@0.1.7/dist/index.js"></script>
+    <script type="module">
+        let pandocEngine = null, isProcessing = false, taskQueue = [], currentDirHandle = null;
+        const engineStatus = document.getElementById('engineStatus'), taskListElem = document.getElementById('taskList'), statsElem = document.getElementById('stats');
+
+        async function init() {
+            try {
+                pandocEngine = await window.Pandoc.load();
+                engineStatus.innerText = "⚡ 引擎就绪";
+                engineStatus.className = "text-xs bg-green-100 text-green-700 px-2 py-1 rounded";
+            } catch (err) { engineStatus.innerText = "❌ 加载失败"; }
+        }
+
+        async function processQueue() {
+            if (isProcessing || taskQueue.length === 0) return;
+            isProcessing = true;
+            while (taskQueue.length > 0) {
+                const task = taskQueue[0];
+                updateTaskUI(task, 'processing', '处理中...');
+                try {
+                    const targetFormat = document.getElementById('targetFormat').value;
+                    const baseName = task.file.name.substring(0, task.file.name.lastIndexOf('.'));
+                    const newName = `${baseName}.${targetFormat}`;
+                    
+                    const buffer = await task.file.arrayBuffer();
+                    const fromExt = task.file.name.split('.').pop().toLowerCase();
+                    const formatMap = { 'txt': 'markdown', 'mobi': 'mobi', 'epub': 'epub' };
+                    
+                    const result = await pandocEngine.run({
+                        text: new Uint8Array(buffer),
+                        from: formatMap[fromExt] || fromExt,
+                        to: formatMap[targetFormat] || targetFormat
+                    });
+
+                    const newFileHandle = await currentDirHandle.getFileHandle(newName, { create: true });
+                    const writable = await newFileHandle.createWritable();
+                    await writable.write(new Blob([result]));
+                    await writable.close();
+
+                    if (document.getElementById('autoReplace').checked) {
+                        await currentDirHandle.removeEntry(task.file.name);
+                    }
+                    updateTaskUI(task, 'success', `成功替换为 ${newName}`);
+                } catch (err) { updateTaskUI(task, 'error', err.message); }
+                taskQueue.shift();
+                statsElem.innerText = `剩余: ${taskQueue.length}`;
+            }
+            isProcessing = false;
+        }
+
+        function updateTaskUI(task, status, msg) {
+            const el = document.getElementById(`task-${task.id}`);
+            if (!el) return;
+            const msgBox = el.querySelector('.msg-box'), statusBox = el.querySelector('.status-box');
+            if (status === 'processing') { el.classList.add('bg-indigo-50'); statusBox.innerText = '转换中...'; }
+            else if (status === 'success') { el.className = "flex items-center justify-between bg-green-50 p-4 rounded-lg border border-green-100 text-xs"; statusBox.innerText = '✅ 完成'; msgBox.innerText = msg; }
+            else if (status === 'error') { el.className = "flex items-center justify-between bg-red-50 p-4 rounded-lg border border-red-100 text-xs"; statusBox.innerText = '❌ 失败'; msgBox.innerText = msg; }
+        }
+
+        function addTaskToUI(task) {
+            if (taskListElem.querySelector('p')) taskListElem.innerHTML = '';
+            const div = document.createElement('div');
+            div.id = `task-${task.id}`;
+            div.className = "flex items-center justify-between bg-white p-3 rounded border border-gray-100 shadow-sm text-sm";
+            div.innerHTML = `<div class="flex items-center"><span>📄</span><div class="ml-3"><p class="font-medium text-gray-800">${task.file.name}</p><p class="text-xs text-gray-400 msg-box">排队中...</p></div></div><div class="status-box text-xs font-bold text-indigo-500">等待</div>`;
+            taskListElem.appendChild(div);
+        }
+
+        document.getElementById('pickDir').addEventListener('click', async () => {
+            if (!pandocEngine) return alert("请等待引擎加载");
+            try {
+                currentDirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+                for await (const entry of currentDirHandle.values()) {
+                    if (entry.kind === 'file' && /\.(txt|epub|mobi|pdf|docx)$/i.test(entry.name)) {
+                        const file = await entry.getFile();
+                        const task = { id: Date.now() + Math.random(), file, handle: entry };
+                        addTaskToUI(task);
+                        taskQueue.push(task);
+                    }
+                }
+                processQueue();
+            } catch (err) { console.warn(err); }
+        });
+        window.onload = init;
+    </script>
+</body>
+</html>
