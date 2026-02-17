@@ -37,6 +37,7 @@ async function refreshFileList() {
   fileEntries = (await listFiles(dirHandle)).map(f => ({ ...f, selected: false, status: '' }));
   renderFileList();
   renderFilterButtons();
+  updateTargetOptions();
   updateStartBtn();
 }
 
@@ -86,6 +87,7 @@ function renderFileList(filter = 'all') {
       const row = e.target.closest('.file-row');
       const idx = parseInt(row.dataset.idx);
       fileEntries[idx].selected = e.target.checked;
+      updateTargetOptions();
       updateStartBtn();
     });
   });
@@ -106,11 +108,13 @@ elSelectAll.addEventListener('change', (e) => {
   const visible = currentFilter === 'all' ? fileEntries : fileEntries.filter(f => f.ext === currentFilter);
   visible.forEach(f => f.selected = checked);
   renderFileList(currentFilter);
+  updateTargetOptions();
   updateStartBtn();
 });
 
 /* ========== 目标格式下拉 ========== */
 function updateTargetOptions() {
+  const currentVal = elTargetFormat.value; // 记录当前选中的值
   const selected = fileEntries.filter(f => f.selected);
   const sourceTypes = [...new Set(selected.map(f => f.ext))];
   const options = SUPPORTED_FORMATS.filter(fmt => !sourceTypes.includes(fmt));
@@ -118,14 +122,18 @@ function updateTargetOptions() {
   elTargetFormat.innerHTML = options.map(fmt =>
     `<option value="${fmt}">${fmt.toUpperCase()}</option>`
   ).join('');
-  updateStartBtn();
+  
+  // 如果之前选中的值在新列表中依然存在，则保持选中；否则选中第一个
+  if (currentVal && options.includes(currentVal)) {
+    elTargetFormat.value = currentVal;
+  }
 }
 
 elTargetFormat.addEventListener('change', updateStartBtn);
 
 /* ========== 开始转换按钮 ========== */
 function updateStartBtn() {
-  updateTargetOptions();
+  // updateTargetOptions(); // 移除此行，避免死循环重置
   const selected = fileEntries.filter(f => f.selected);
   const hasTarget = elTargetFormat.value;
   elStartBtn.disabled = isProcessing || !selected.length || !hasTarget;
@@ -177,9 +185,11 @@ elStartBtn.addEventListener('click', async () => {
 
   isProcessing = false;
   elPickDir.disabled = false;
+  updateTargetOptions();
   updateStartBtn();
   renderFilterButtons();
 });
 
 /* ========== 初始化 ========== */
+updateTargetOptions();
 updateStartBtn();
