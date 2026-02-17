@@ -1,0 +1,17 @@
+{
+  "name": "smartdoc",
+  "version": "1.0.0",
+  "description": "电子书格式互转 WebApp",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "dev": "npx serve ."
+  },
+  "dependencies": {
+    "cloudconvert": "^3.0.0"
+  },
+  "devDependencies": {
+    "vitest": "^2.0.0"
+  }
+}

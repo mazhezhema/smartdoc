@@ -3,171 +3,119 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SmartDoc - 智能文档转换器</title>
-
-  <!-- UI 样式（保持不变） -->
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/tailwindcss@2.2.19/dist/tailwind.min.css"
-  />
-
+  <title>SmartDoc - 电子书格式互转</title>
+  <link rel="stylesheet" href="https://unpkg.com/tailwindcss@2.2.19/dist/tailwind.min.css" />
   <style>
-    .task-list-height { max-height: 500px; }
-    .drop-zone {
-      border: 3px dashed #cbd5e1;
-      border-radius: 1rem;
-      transition: all 0.3s;
+    :root { --primary: #4f46e5; --primary-hover: #4338ca; }
+
+    .file-list { max-height: 400px; overflow-y: auto; }
+
+    .file-row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 16px; border-bottom: 1px solid #f1f5f9;
+      cursor: pointer; transition: background 0.15s;
     }
-    .drop-zone:hover {
-      border-color: #4f46e5;
-      background-color: #f5f3ff;
+    .file-row:hover { background: #f8fafc; }
+    .file-row input[type=checkbox] {
+      width: 18px; height: 18px; accent-color: var(--primary);
+    }
+    .file-name { flex: 1; font-size: 14px; color: #1e293b; word-break: break-all; }
+    .file-ext {
+      font-size: 11px; font-weight: 700; padding: 2px 8px;
+      border-radius: 4px; background: #e0e7ff; color: #4338ca;
+      text-transform: uppercase;
+    }
+
+    .status { font-size: 12px; font-weight: 600; margin-left: auto; white-space: nowrap; }
+    .status-waiting { color: #94a3b8; }
+    .status-converting { color: #f59e0b; }
+    .status-success { color: #10b981; }
+    .status-error { color: #ef4444; }
+
+    .filter-btn {
+      font-size: 12px; padding: 4px 12px; border-radius: 9999px;
+      border: 1px solid #e2e8f0; background: white; color: #64748b;
+      cursor: pointer; transition: all 0.15s;
+    }
+    .filter-btn:hover { border-color: var(--primary); color: var(--primary); }
+    .filter-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+
+    .empty-msg { text-align: center; color: #cbd5e1; font-style: italic; padding: 48px 0; }
+
+    .card {
+      background: white; border-radius: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+      border: 1px solid #f1f5f9;
     }
   </style>
 </head>
 
 <body class="bg-gray-50 min-h-screen">
-  <div class="max-w-4xl mx-auto py-12 px-4">
-    <div class="flex justify-between items-center mb-10">
-      <h1 class="text-3xl font-bold text-indigo-600 flex items-center">
-        <span class="mr-2">🔄</span> SmartDoc
+  <div class="max-w-3xl mx-auto py-10 px-4">
+
+    <!-- 标题栏 -->
+    <div class="flex justify-between items-center mb-8">
+      <h1 class="text-2xl font-bold text-indigo-600 flex items-center gap-2">
+        <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+        </svg>
+        SmartDoc
       </h1>
-      <div
-        id="statusBadge"
-        class="text-xs font-bold px-3 py-1 rounded-full bg-green-100 text-green-600"
-      >
-        ⚡ PDF 引擎就绪（非扫描）
-      </div>
+      <span class="text-xs font-semibold px-3 py-1 rounded-full bg-indigo-50 text-indigo-500">
+        PDF / EPUB / TXT / MOBI / AZW3
+      </span>
     </div>
 
-    <div id="dropZone" class="bg-white p-12 text-center mb-8 shadow-sm">
-      <div class="mb-6">
-        <select
-          id="targetFormat"
-          class="mb-4 p-2 border rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-indigo-500"
-        >
-          <option value="epub">转换目标: EPUB</option>
-          <option value="txt">转换目标: TXT</option>
-        </select>
-        <br />
-        <button
-          id="pickDir"
-          class="bg-indigo-600 text-white px-10 py-4 rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition-all active:scale-95"
-        >
-          📁 选择文件夹并处理
+    <!-- 操作区 -->
+    <div class="card p-6 mb-6">
+      <div class="flex flex-wrap items-center gap-4 mb-4">
+        <button id="pickDir"
+          class="bg-indigo-600 text-white px-6 py-2.5 rounded-lg font-semibold shadow hover:bg-indigo-700 transition active:scale-95 text-sm">
+          选择文件夹
         </button>
+        <span id="dirName" class="text-sm text-gray-400">未选择文件夹</span>
       </div>
-      <div class="flex items-center justify-center text-sm text-gray-500">
-        <span>当前版本仅支持「非扫描 PDF」</span>
+
+      <div class="flex flex-wrap items-center gap-4">
+        <label class="text-sm text-gray-600 font-medium">目标格式:</label>
+        <select id="targetFormat"
+          class="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
+          <option value="">请先选择文件</option>
+        </select>
+
+        <div class="flex items-center gap-2 ml-auto">
+          <input type="checkbox" id="selectAll" class="w-4 h-4 accent-indigo-600" />
+          <label for="selectAll" class="text-sm text-gray-500 cursor-pointer">全选</label>
+        </div>
       </div>
     </div>
 
-    <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-      <div
-        class="p-4 bg-gray-50 border-b font-bold text-gray-400 text-xs uppercase tracking-widest text-center"
-      >
-        任务列表
+    <!-- 筛选 + 文件列表 -->
+    <div class="card overflow-hidden mb-6">
+      <div class="px-5 py-3 bg-gray-50 border-b flex items-center gap-2 flex-wrap" id="filterBtns">
+        <span class="text-xs text-gray-400 font-semibold uppercase tracking-wider">文件列表</span>
       </div>
-      <div
-        id="taskList"
-        class="p-6 task-list-height overflow-y-auto min-h-[250px]"
-      >
-        <p class="text-center text-gray-300 italic py-10">
-          暂无任务，请点击上方按钮
-        </p>
+      <div id="fileList" class="file-list">
+        <p class="empty-msg">请先点击「选择文件夹」</p>
       </div>
     </div>
+
+    <!-- 开始转换 -->
+    <div class="text-center">
+      <button id="startBtn" disabled
+        class="bg-indigo-600 text-white px-10 py-3 rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed text-sm">
+        开始转换 (0 个文件)
+      </button>
+      <p class="text-xs text-gray-400 mt-2">转换成功后将自动删除原文件</p>
+    </div>
+
   </div>
 
-  <!-- PDF.js（拆 PDF 用） -->
+  <!-- 依赖库 CDN -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <!-- JSZip（生成 EPUB） -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
-  <script>
-    let isProcessing = false;
-    let queue = [];
-    let dirHandle = null;
-
-    const taskList = document.getElementById("taskList");
-
-    /* ========== PDF → TEXT ========== */
-    async function pdfToText(file) {
-      const buffer = await file.arrayBuffer();
-      const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
-
-      let fullText = "";
-
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const content = await page.getTextContent();
-
-        const lines = content.items
-          .sort(
-            (a, b) =>
-              b.transform[5] - a.transform[5] ||
-              a.transform[4] - b.transform[4]
-          )
-          .map(item => item.str);
-
-        fullText += lines.join(" ") + "\n\n";
-      }
-
-      return fullText;
-    }
-
-    /* ========== TEXT → HTML（轻量重建） ========== */
-    function textToHTML(text) {
-      return text
-        .split("\n")
-        .map(line => {
-          const t = line.trim();
-          if (!t) return "";
-          if (t.length < 30) return `<h2>${t}</h2>`;
-          return `<p>${t}</p>`;
-        })
-        .join("\n");
-    }
-
-    /* ========== HTML → EPUB ========== */
-    async function htmlToEpub(html, title) {
-      const zip = new JSZip();
-
-      zip.file("mimetype", "application/epub+zip");
-
-      zip.folder("META-INF").file(
-        "container.xml",
-        `<?xml version="1.0"?>
-<container version="1.0"
- xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
- <rootfiles>
-  <rootfile full-path="OEBPS/content.opf"
-   media-type="application/oebps-package+xml"/>
- </rootfiles>
-</container>`
-      );
-
-      zip.folder("OEBPS").file(
-        "content.xhtml",
-        `<html xmlns="http://www.w3.org/1999/xhtml">
-<head><title>${title}</title></head>
-<body>${html}</body>
-</html>`
-      );
-
-      return await zip.generateAsync({ type: "blob" });
-    }
-
-    async function saveFile(name, blob) {
-      const handle = await dirHandle.getFileHandle(name, { create: true });
-      const writable = await handle.createWritable();
-      await writable.write(blob);
-      await writable.close();
-    }
-
-    async function convertAndSave(task) {
-      const format = document.getElementById("targetFormat").value;
-      const baseName = task.file.name.replace(/\.pdf$/i, "");
-
-      const text = await pdfToText(task.file);
-
-      if (form
+  <!-- 应用入口 -->
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
