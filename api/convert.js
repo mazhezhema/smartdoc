@@ -54,11 +54,11 @@ export default async function handler(req, res) {
       },
     });
 
-    // 上传文件
+    // 上传文件（Stream 无 length 时需显式传 fileSize）
     const uploadTask = job.tasks.find(t => t.name === 'upload');
     const { Readable } = await import('stream');
     const inputStream = Readable.from(fileBuffer);
-    await cloudConvert.tasks.upload(uploadTask, inputStream, filename);
+    await cloudConvert.tasks.upload(uploadTask, inputStream, filename, fileBuffer.length);
 
     // 等待完成
     job = await cloudConvert.jobs.wait(job.id);
