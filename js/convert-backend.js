@@ -29,7 +29,8 @@ export async function convertViaBackend(file, inputFormat, outputFormat) {
 
   if (!response.ok) {
     const err = await response.json().catch(() => ({ error: response.statusText }));
-    throw new Error(err.error || `Conversion failed: ${response.status}`);
+    const msg = err.hint ? `${err.error} ${err.hint}` : (err.error || `Conversion failed: ${response.status}`);
+    throw new Error(msg);
   }
 
   return await response.blob();

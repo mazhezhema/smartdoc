@@ -86,6 +86,14 @@ export default async function handler(req, res) {
     return res.send(resultBuffer);
   } catch (e) {
     console.error('CloudConvert error:', e);
-    return res.status(500).json({ error: e.message || 'Internal conversion error' });
+    const msg = e.message || 'Internal conversion error';
+    // Payment Required：每日免费 10 次用完后会返回此错误
+    if (msg.includes('Payment Required')) {
+      return res.status(402).json({
+        error: msg,
+        hint: 'CloudConvert 今日免费额度（10 次）可能已用完，请明日再试或到 cloudconvert.com 充值。',
+      });
+    }
+    return res.status(500).json({ error: msg });
   }
 }
